@@ -46,6 +46,7 @@ jobs:
   # We use two compilers C/C++:
   # - Microsoft Visual Studio compiler.
   # - MinGW-w64 GCC compiler with MSVCRT or UCRT C standard library.
+  # - LLVM/Clang compiler via MSYS2 CLANGARM64 environment (ARM64 only).
   # We use 2 package managers
   # - NuGet packages are compatible with Visual Studio compiler.
   # - MSYS2 pacman with MSYS2 packages and MING-w64 packages.
@@ -84,6 +85,14 @@ jobs:
         - SWIGLANG: csharp
           os: windows-2025-vs2026
         - SWIGLANG: csharp
+          os: windows-11-arm
+          continue-on-error: true
+        - SWIGLANG: csharp
+          os: windows-11-arm
+          COMPILER: clang
+          MSYS2_ENV: clangarm64
+          continue-on-error: true
+        - SWIGLANG: csharp
           INSTALL: 'true'
           COMPILER: gcc
         - SWIGLANG: csharp
@@ -97,6 +106,14 @@ jobs:
           VER: 21
         - SWIGLANG: java
           VER: 25
+        - SWIGLANG: java
+          os: windows-11-arm
+          continue-on-error: true
+        - SWIGLANG: java
+          os: windows-11-arm
+          COMPILER: clang
+          MSYS2_ENV: clangarm64
+          continue-on-error: true
         - SWIGLANG: java
           COMPILER: gcc
           CSTD: gnu99
@@ -196,10 +213,10 @@ jobs:
 
     # Set MSVC compilers path and environment variables.
     - name: Setup MSVC
-      if: ${{ env.COMPILER == '' || env.SWIGLANG == 'csharp' }}
-      uses: TheMrMilchmann/setup-msvc-dev@v3
+      if: ${{ (env.COMPILER == '' || env.SWIGLANG == 'csharp') && env.COMPILER != 'clang' }}
+      uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d
       with:
-        arch: x64
+        arch: ${{ matrix.os == 'windows-11-arm' && 'arm64' || 'x64' }}
 
     - name: Prepare Environment
       shell: bash
@@ -207,7 +224,7 @@ jobs:
           set -x
           uname --all
 
-          if [[ "$COMPILER" = "gcc" ]]; then
+          if [[ "$COMPILER" = "gcc" || "$COMPILER" = "clang" ]]; then
             # MinGW-w64 variant to use
             # See: https://www.msys2.org/docs/environments
             MSYS2_UENV="${MSYS2_ENV^^}" # Change to uppercase
@@ -225,9 +242,13 @@ jobs:
               # The matched MSYS2 packages prefix
               mingw_variant=mingw-w64-ucrt-x86_64-
               ;;
-            CLANG64) # Use LLVM/Clang
+            CLANG64) # Use LLVM/Clang x86_64
               # The matched MSYS2 packages prefix
               mingw_variant=mingw-w64-clang-x86_64-
+              ;;
+            CLANGARM64) # Use LLVM/Clang ARM64
+              # The matched MSYS2 packages prefix
+              mingw_variant=mingw-w64-clang-aarch64-
               ;;
             esac
             # The matched MSYS2 active environment path prefix
@@ -275,7 +296,7 @@ jobs:
             echo "MORE_MSYS_PKGS=base-devel $MORE_MSYS_PKGS" >> $GITHUB_ENV
             echo "BOOST_PATH=/c/msys64$mingw_dir" >> $GITHUB_ENV
 
-            # Set MSYS2 GCC compiler location
+            # Set MSYS2 compiler location
             echo "$mingw_dir/bin" >> $GITHUB_PATH
           else
             # COMPILER: cccl wrapping MSVC
@@ -327,7 +348,12 @@ jobs:
       shell: bash
       run: |
           set -x
-          if [[ -z "$COMPILER" ]]; then
+          if [[ "$COMPILER" = "clang" ]]; then
+            which clang
+            clang --version | head -n1
+            which clang++
+            clang++ --version | head -n1
+          elif [[ -z "$COMPILER" ]]; then
             which cl.exe
             cl.exe /? 2>&1 | head -n1
           else
