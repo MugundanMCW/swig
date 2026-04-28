@@ -214,9 +214,23 @@ jobs:
     # Set MSVC compilers path and environment variables.
     - name: Setup MSVC
       if: ${{ (env.COMPILER == '' || env.SWIGLANG == 'csharp') && env.COMPILER != 'clang' }}
-      uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d
+      uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d # v1
       with:
         arch: ${{ matrix.os == 'windows-11-arm' && 'arm64' || 'x64' }}
+        
+    # For ARM64 runner (windows-11-arm), MSYS2 is never pre-installed
+    # so we always use this action for clang/gcc builds.
+    - name: Setup MSYS2
+      if: ${{ env.COMPILER == 'gcc' || env.COMPILER == 'clang' }}
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{ env.MSYS2_ENV == 'clangarm64' && 'CLANGARM64' || env.MSYS2_ENV == 'ucrt64' && 'UCRT64' || env.MSYS2_ENV == 'clang64' && 'CLANG64' || 'MINGW64' }}
+        update: true
+        install: >-
+          autoconf
+          automake
+          bison
+        path-type: inherit
 
     - name: Prepare Environment
       shell: bash
@@ -293,7 +307,7 @@ jobs:
             echo "PCRE2_CFLAGS=-I$mingw_dir/include -DPCRE2_STATIC" >> $GITHUB_ENV
             echo "PCRE2_LIBS=-L$mingw_dir/lib -lpcre2-8" >> $GITHUB_ENV
 
-            echo "MORE_MSYS_PKGS=base-devel $MORE_MSYS_PKGS" >> $GITHUB_ENV
+            echo "MORE_MSYS_PKGS=$MORE_MSYS_PKGS" >> $GITHUB_ENV
             echo "BOOST_PATH=/c/msys64$mingw_dir" >> $GITHUB_ENV
 
             # Set MSYS2 compiler location
@@ -336,13 +350,12 @@ jobs:
           echo 'C:\msys64\usr\bin' >> $GITHUB_PATH
 
     - name: Install MSYS2 Packages
-      shell: cmd
+      if: ${{ env.COMPILER == 'gcc' || env.COMPILER == 'clang' }}
+      shell: msys2 {0}
       run: |
-          rem 'MSYS2 uses MinGW-w64 https://packages.msys2.org/'
+          # 'MSYS2 uses MinGW-w64 https://packages.msys2.org/'
           pacman -Syu --noconfirm --needed
-          if %ErrorLevel% NEQ 0 (exit 1)
-          pacman -Syu --noconfirm --needed autoconf automake bison %MORE_MSYS_PKGS%
-          if %ErrorLevel% NEQ 0 (exit 1)
+          pacman -S --noconfirm --needed $MORE_MSYS_PKGS
 
     - name: Autoconf
       shell: bash
