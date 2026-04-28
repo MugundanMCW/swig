@@ -62,6 +62,7 @@ jobs:
     continue-on-error: ${{ matrix.continue-on-error || false }}
 
     # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
+    # https://github.com/actions/runner-images/blob/main/images/windows/Windows11Arm-Readme.md
     runs-on: ${{ matrix.os || 'windows-2025' }}
 
     # The name of the test follow the tested language
@@ -214,17 +215,16 @@ jobs:
     # Set MSVC compilers path and environment variables.
     - name: Setup MSVC
       if: ${{ (env.COMPILER == '' || env.SWIGLANG == 'csharp') && env.COMPILER != 'clang' }}
-      uses: bus1/cabuild/action/msdevshell@e22aba57d6e74891d059d66501b6b5aed8123c4d # v1
+      uses: TheMrMilchmann/setup-msvc-dev@v3
       with:
         arch: ${{ matrix.os == 'windows-11-arm' && 'arm64' || 'x64' }}
-        
-    # For ARM64 runner (windows-11-arm), MSYS2 is never pre-installed
-    # so we always use this action for clang/gcc builds.
-    - name: Setup MSYS2
-      if: ${{ env.COMPILER == 'gcc' || env.COMPILER == 'clang' }}
+
+    # On ARM64 runner MSYS2 is not pre-installed, use setup-msys2 action.
+    - name: Setup MSYS2 (ARM64)
+      if: ${{ matrix.os == 'windows-11-arm' && (env.COMPILER == 'gcc' || env.COMPILER == 'clang') }}
       uses: msys2/setup-msys2@v2
       with:
-        msystem: ${{ env.MSYS2_ENV == 'clangarm64' && 'CLANGARM64' || env.MSYS2_ENV == 'ucrt64' && 'UCRT64' || env.MSYS2_ENV == 'clang64' && 'CLANG64' || 'MINGW64' }}
+        msystem: CLANGARM64
         update: true
         install: >-
           autoconf
@@ -307,7 +307,7 @@ jobs:
             echo "PCRE2_CFLAGS=-I$mingw_dir/include -DPCRE2_STATIC" >> $GITHUB_ENV
             echo "PCRE2_LIBS=-L$mingw_dir/lib -lpcre2-8" >> $GITHUB_ENV
 
-            echo "MORE_MSYS_PKGS=$MORE_MSYS_PKGS" >> $GITHUB_ENV
+            echo "MORE_MSYS_PKGS=base-devel $MORE_MSYS_PKGS" >> $GITHUB_ENV
             echo "BOOST_PATH=/c/msys64$mingw_dir" >> $GITHUB_ENV
 
             # Set MSYS2 compiler location
@@ -349,13 +349,24 @@ jobs:
 
           echo 'C:\msys64\usr\bin' >> $GITHUB_PATH
 
-    - name: Install MSYS2 Packages
-      if: ${{ env.COMPILER == 'gcc' || env.COMPILER == 'clang' }}
+    # On ARM64 runner install additional MSYS2 packages via msys2 shell.
+    - name: Install MSYS2 Packages (ARM64)
+      if: ${{ matrix.os == 'windows-11-arm' && (env.COMPILER == 'gcc' || env.COMPILER == 'clang') }}
       shell: msys2 {0}
       run: |
           # 'MSYS2 uses MinGW-w64 https://packages.msys2.org/'
-          pacman -Syu --noconfirm --needed
           pacman -S --noconfirm --needed $MORE_MSYS_PKGS
+
+    # On x86_64 runners MSYS2 is pre-installed, use pacman directly via cmd.
+    - name: Install MSYS2 Packages (x86_64)
+      if: ${{ matrix.os != 'windows-11-arm' }}
+      shell: cmd
+      run: |
+          rem 'MSYS2 uses MinGW-w64 https://packages.msys2.org/'
+          pacman -Syu --noconfirm --needed
+          if %ErrorLevel% NEQ 0 (exit 1)
+          pacman -Syu --noconfirm --needed autoconf automake bison %MORE_MSYS_PKGS%
+          if %ErrorLevel% NEQ 0 (exit 1)
 
     - name: Autoconf
       shell: bash
@@ -497,3 +508,4 @@ jobs:
       shell: bash
       run: |
           make check-maintainer-clean
+          
