@@ -47,13 +47,13 @@ jobs:
   # - Microsoft Visual Studio compiler.
   # - MinGW-w64 GCC compiler with MSVCRT or UCRT C standard library.
   # We use 2 package managers
-  # - NuGet packages are compatible with Visual Studio compiler.
+  # - vcpkg packages are compatible with Visual Studio compiler (x64 and arm64).
   # - MSYS2 pacman with MSYS2 packages and MING-w64 packages.
   #
   # We try to use already installed software on GitHub windows
   #  and install only missed software.
   # We use different versions of installed languages by using
-  #  proper envirounment.
+  #  proper environment.
   build:
     # When continue-on-error is true for an individual build,
     # that build can fail (it'll show red),
@@ -73,7 +73,6 @@ jobs:
       ${{ matrix.MSYS2_ENV }}
       ${{ matrix.os }}
       ${{ matrix.continue-on-error && '(can fail)' }}
-
     needs: [clang-format]
 
     strategy:
@@ -140,6 +139,29 @@ jobs:
           COMPILER: gcc
           CSTD: gnu11
           MSYS2_ENV: ucrt64
+        - SWIGLANG: csharp
+          MSYS2_ENV: clangarm64
+          os: windows-11-arm
+          continue-on-error: true
+        - SWIGLANG: java
+          VER: 21
+          MSYS2_ENV: clangarm64
+          os: windows-11-arm
+          continue-on-error: true
+        - SWIGLANG: python
+          MSYS2_ENV: clangarm64
+          os: windows-11-arm
+          continue-on-error: true
+        - SWIGLANG: ruby
+          COMPILER: gcc
+          MSYS2_ENV: clangarm64
+          os: windows-11-arm
+          continue-on-error: true
+        - SWIGLANG: go
+          CSTD: gnu11
+          MSYS2_ENV: clangarm64
+          os: windows-11-arm
+          continue-on-error: true
       # Run all of them, as opposed to aborting when one fails
       fail-fast: false
 
@@ -147,8 +169,8 @@ jobs:
       CFLAGS: '-O2'
       CXXFLAGS: '-O2'
       CCCL_OPTIONS: '--cccl-muffle /W3 /EHsc'
-      PCRE2_CCCL_LD: '-lpcre2-8-static --cccl-link /NODEFAULTLIB:MSVCRT'
-      CHECK_OPTIONS: 'CSHARPOPTIONS=-platform:x64'
+      PCRE2_CCCL_LD: '-lpcre2-8 --cccl-link /NODEFAULTLIB:MSVCRT'
+      CHECK_OPTIONS: ${{ matrix.os == 'windows-11-arm' && 'CSHARPOPTIONS=-platform:arm64' || 'CSHARPOPTIONS=-platform:x64' }}
       SWIGLANG: ${{ matrix.SWIGLANG }}
       VER: ${{ matrix.VER }}
       SWIG_FEATURES: ${{ matrix.SWIG_FEATURES }}
@@ -171,11 +193,24 @@ jobs:
 #  /NODEFAULTLIB:lib   Ignore library 'lib'
 
     steps:
+    # On windows-11-arm, MSYS2 is not pre-installed.
+    # Install it manually via the official silent installer into C:\msys64,
+    # the same path used on x86 runners, so all subsequent bash steps are uniform.
+    - name: Install MSYS2 (windows-11-arm)
+      if: ${{ matrix.os == 'windows-11-arm' }}
+      shell: powershell
+      run: |
+          $installer = "$env:TEMP\msys2-arm64.exe"
+          Invoke-WebRequest -Uri "https://github.com/msys2/msys2-installer/releases/download/2026-03-22/msys2-arm64-20260322.exe" `
+            -OutFile $installer
+          # Silent install to C:\msys64 (same path as pre-installed on x86 runners)
+          Start-Process -FilePath $installer -ArgumentList "install --root C:\msys64 --confirm-command" -Wait -NoNewWindow
+          # Initial pacman database sync and upgrade
+          C:\msys64\usr\bin\bash -lc "pacman -Syu --noconfirm --needed"
     - name: Machine Info
       shell: powershell
       run: |
           systeminfo | findstr /B /C:"OS Name" /B /C:"OS Version"
-
     - name: Checkout
       uses: actions/checkout@v6
       with:
@@ -186,27 +221,32 @@ jobs:
       with:
         key: ${{ matrix.os || 'windows-2025' }}-${{ matrix.COMPILER || 'msvc' }}
 
-    - name: Install NuGet Packages
+    - name: Install vcpkg Packages
       if: ${{ env.COMPILER == '' }}
       shell: powershell
       run: |
-          # 'nuget build for .NET: https://www.nuget.org/packages'
-          nuget install PCRE2 -OutputDirectory C:\Tools
-          nuget install boost -OutputDirectory C:\Tools
+          # Use static triplets so pcre2 is built as a static lib (.lib without
+          # a DLL counterpart), matching the -lpcre2-8 / /NODEFAULTLIB:MSVCRT
+          # linker flags used by cccl. NuGet is not available on windows-11-arm,
+          # so vcpkg is used for both x64 and arm64 runners for consistency.
+          $triplet = if ($env:OS -eq 'windows-11-arm') { 'arm64-windows-static' } else { 'x64-windows-static' }
+          vcpkg install pcre2:$triplet boost-headers:$triplet --triplet $triplet
+          $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\$triplet"
+          echo "VCPKG_INSTALLED=$vcpkgInstalled" >> $env:GITHUB_ENV
+          echo "VCPKG_TRIPLET=$triplet" >> $env:GITHUB_ENV
 
     # Set MSVC compilers path and environment variables.
     - name: Setup MSVC
       if: ${{ env.COMPILER == '' || env.SWIGLANG == 'csharp' }}
-      uses: TheMrMilchmann/setup-msvc-dev@v3
+      uses: ilammy/msvc-dev-cmd@v1
       with:
-        arch: x64
+        arch: ${{ matrix.os == 'windows-11-arm' && 'arm64' || 'x64' }}
 
     - name: Prepare Environment
       shell: bash
       run: |
           set -x
           uname --all
-
           if [[ "$COMPILER" = "gcc" ]]; then
             # MinGW-w64 variant to use
             # See: https://www.msys2.org/docs/environments
@@ -229,15 +269,18 @@ jobs:
               # The matched MSYS2 packages prefix
               mingw_variant=mingw-w64-clang-x86_64-
               ;;
+            CLANGARM64) # Use LLVM/Clang for ARM64
+              # The matched MSYS2 packages prefix
+              mingw_variant=mingw-w64-clang-aarch64-
+              ;;
             esac
             # The matched MSYS2 active environment path prefix
             if [[ -z "$mingw_dir" ]]; then
-              mingw_dir="/${MSYSTEM,,}" # Change to lowecase
+              mingw_dir="/${MSYSTEM,,}" # Change to lowercase
             fi
             # Note regarding 'mingw_dir':
             #  The MSYSTEM=MSYS, which supports 'Cygwin', uses the '/usr' path prefix.
             #  We do not use it at the moment.
-
             case "$SWIGLANG" in
             python)
               MORE_MSYS_PKGS+=" ${mingw_variant}python"
@@ -262,19 +305,22 @@ jobs:
               fi
               ;;
             esac
-
             # MinGW-w64 packages to install with MSYS2
-            for n in binutils make autotools pcre2 boost; do
+            # For CLANGARM64 add 'toolchain' to get clang/clang++/lld.
+            # For MINGW64/UCRT64/CLANG64 gcc is already present via dependencies.
+            if [[ "$MSYSTEM" == "CLANGARM64" ]]; then
+              pkgs="toolchain binutils make autotools pcre2 boost"
+            else
+              pkgs="binutils make autotools pcre2 boost"
+            fi
+            for n in $pkgs; do
               MORE_MSYS_PKGS+=" ${mingw_variant}$n"
             done
-
             # MinGW-w64 pcre2
             echo "PCRE2_CFLAGS=-I$mingw_dir/include -DPCRE2_STATIC" >> $GITHUB_ENV
             echo "PCRE2_LIBS=-L$mingw_dir/lib -lpcre2-8" >> $GITHUB_ENV
-
             echo "MORE_MSYS_PKGS=base-devel $MORE_MSYS_PKGS" >> $GITHUB_ENV
             echo "BOOST_PATH=/c/msys64$mingw_dir" >> $GITHUB_ENV
-
             # Set MSYS2 GCC compiler location
             echo "$mingw_dir/bin" >> $GITHUB_PATH
           else
@@ -283,16 +329,13 @@ jobs:
             chmod +x /usr/bin/cccl
             /usr/bin/cccl --version
             cp -p /usr/bin/cccl /c/msys64/usr/bin/cccl
-
-            # Using pcre2 installed with NuGet
-            PCRE2_PATH=$(ls -d /c/tools/PCRE2*)
-            echo "PCRE2_CFLAGS=-I$PCRE2_PATH/include -DPCRE2_STATIC" >> $GITHUB_ENV
-            echo "PCRE2_LIBS=-L$PCRE2_PATH/lib $PCRE2_CCCL_LD" >> $GITHUB_ENV
-
+            # Using pcre2 and boost installed with vcpkg
+            VCPKG_INSTALLED_UNIX="$(cygpath -u "$VCPKG_INSTALLED")"
+            echo "PCRE2_CFLAGS=-I$VCPKG_INSTALLED_UNIX/include -DPCRE2_STATIC" >> $GITHUB_ENV
+            echo "PCRE2_LIBS=-L$VCPKG_INSTALLED_UNIX/lib $PCRE2_CCCL_LD" >> $GITHUB_ENV
             echo "CXX=/usr/bin/cccl" >> $GITHUB_ENV
             echo "CC=/usr/bin/cccl" >> $GITHUB_ENV
-            echo "BOOST_PATH=$(ls -d /c/tools/boost*)/lib/native" >> $GITHUB_ENV
-
+            echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
               python)
@@ -304,25 +347,37 @@ jobs:
               esac
             fi
           fi # COMPILER
-
           if [[ "$SWIGLANG" = "java" ]] && [[ -n "$VER" ]]; then
-            java_path="JAVA_HOME_${VER}_X64"
+            # On ARM runners the toolcache env var uses AARCH64 suffix, not X64
+            if [[ "$OS" == "windows-11-arm" ]]; then
+              java_path="JAVA_HOME_${VER}_AARCH64"
+            else
+              java_path="JAVA_HOME_${VER}_X64"
+            fi
             echo "JAVA_HOME=${!java_path}" >> $GITHUB_ENV
           fi
-
           echo "SWIGJOBS=-j$NUMBER_OF_PROCESSORS" >> $GITHUB_ENV
-
           echo 'C:\msys64\usr\bin' >> $GITHUB_PATH
-
+    # On windows-11-arm pacman -Syu was already run by the installer step,
+    # so only install the extra packages. Use bash with full path so it does
+    # not get killed when msys2-runtime is not upgraded.
+    - name: Install MSYS2 Packages (windows-11-arm)
+      if: ${{ matrix.os == 'windows-11-arm' }}
+      shell: bash
+      run: |
+          C:/msys64/usr/bin/pacman -S --noconfirm --needed autoconf automake bison $MORE_MSYS_PKGS
+    # On x86 runners pacman -Syu must run twice: the first upgrades msys2-runtime
+    # and pacman itself (killing the MSYS2 process), the second run completes the
+    # upgrade and installs the needed packages. cmd shell survives this restart.
     - name: Install MSYS2 Packages
+      if: ${{ matrix.os != 'windows-11-arm' }}
       shell: cmd
       run: |
-          rem 'MSYS2 uses MinGW-w64 https://packages.msys2.org/'
+          rem MSYS2 uses MinGW-w64 https://packages.msys2.org/
           pacman -Syu --noconfirm --needed
           if %ErrorLevel% NEQ 0 (exit 1)
           pacman -Syu --noconfirm --needed autoconf automake bison %MORE_MSYS_PKGS%
           if %ErrorLevel% NEQ 0 (exit 1)
-
     - name: Autoconf
       shell: bash
       run: |
@@ -331,12 +386,22 @@ jobs:
             which cl.exe
             cl.exe /? 2>&1 | head -n1
           else
-            which gcc
-            gcc --version | head -n1
-            which g++
-            g++ --version | head -n1
+            if [[ "$MSYS2_ENV" == "clangarm64" ]]; then
+              # CLANGARM64 uses clang/clang++, not gcc/g++
+              which clang
+              clang --version | head -n1
+              which clang++
+              clang++ --version | head -n1
+              # Export so autoconf/configure picks up the right compiler
+              echo "CC=clang" >> $GITHUB_ENV
+              echo "CXX=clang++" >> $GITHUB_ENV
+            else
+              which gcc
+              gcc --version | head -n1
+              which g++
+              g++ --version | head -n1
+            fi
           fi
-
           WITHLANG="$SWIGLANG"
           case "$SWIGLANG" in
           csharp)
@@ -354,7 +419,6 @@ jobs:
             ;;
           esac
           echo "WITHLANG=$WITHLANG" >> $GITHUB_ENV
-
           if [[ -z "$CSTD" ]]; then
             case "$CPPSTD" in
               c++11) CSTD=c11 ;;
@@ -372,11 +436,8 @@ jobs:
           if [[ -n "$CPPSTD" ]]; then
             echo "CXXFLAGS=$CXXFLAGS -std=$CPPSTD" >> $GITHUB_ENV
           fi
-
           make --version | head -n2
-
           ./autogen.sh
-
     - name: Configure
       shell: bash
       run: |
@@ -395,12 +456,10 @@ jobs:
           fi
           echo "${CONFIGOPTS[@]}"
           ./configure "${CONFIGOPTS[@]}"
-
     - name: Build
       shell: bash
       run: |
           make -s $SWIGJOBS
-
     # Test the Windows swig have a proper SWIG library path
     - name: Test swiglib
       shell: bash
@@ -425,7 +484,6 @@ jobs:
             echo "Second test fail"
             exit 1
           fi
-
     - name: Test
       shell: bash
       run: |
@@ -435,22 +493,18 @@ jobs:
           make check-$SWIGLANG-enabled
           make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS
           make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS
-
     - name: Install
       if: ${{ env.INSTALL == 'true' }}
       shell: bash
       run: |
           make -s install > /dev/null
-
           which swig.exe
           swig.exe -version
-
           # TODO: Make install of ccache-swig do not work on Windows
           #if [[ "$COMPILER" = "gcc" ]]; then
           #  which ccache-swig.exe
           #  ccache-swig.exe -V
           #fi
-
     # The test by itself is not related to the installation.
     # We just want to save testing time :-)
     - name: Clean
