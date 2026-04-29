@@ -341,6 +341,7 @@ jobs:
             # -I path (no /include appended), so this same value is passed to
             # both configure and the test-suite Makefile compilations.
             echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
+            echo "EXTRA_CXXFLAGS=-I$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
               python)
