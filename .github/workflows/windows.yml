@@ -158,6 +158,7 @@ jobs:
           os: windows-11-arm
           continue-on-error: true
         - SWIGLANG: go
+          COMPILER: gcc
           CSTD: gnu11
           MSYS2_ENV: clangarm64
           os: windows-11-arm
@@ -335,11 +336,10 @@ jobs:
             echo "PCRE2_LIBS=-L$VCPKG_INSTALLED_UNIX/lib $PCRE2_CCCL_LD" >> $GITHUB_ENV
             echo "CXX=/usr/bin/cccl" >> $GITHUB_ENV
             echo "CC=/usr/bin/cccl" >> $GITHUB_ENV
-            # BOOST_PATH must point directly to the dir containing the boost/
-            # folder so that test Makefiles using -I$(BOOST_PATH) work correctly.
-            # configure --with-boost needs the prefix (one level up), so we
-            # export BOOST_PREFIX separately for the Configure step.
-            echo "BOOST_PREFIX=$VCPKG_INSTALLED_UNIX" >> $GITHUB_ENV
+            # BOOST_PATH must point to the directory directly containing the
+            # boost/ folder. SWIG's AX_BOOST_BASE uses --with-boost as a bare
+            # -I path (no /include appended), so this same value is passed to
+            # both configure and the test-suite Makefile compilations.
             echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
@@ -449,10 +449,7 @@ jobs:
           set -x
           CONFIGOPTS+=(--disable-dependency-tracking)
           if [[ -n "$WITHLANG" ]]; then
-            # BOOST_PREFIX is set for MSVC/vcpkg builds (prefix dir, one level
-            # above include/). For GCC/MSYS2 builds BOOST_PATH already is the
-            # prefix, so fall back to it when BOOST_PREFIX is not set.
-            CONFIGOPTS+=(--with-boost="${BOOST_PREFIX:-$BOOST_PATH}")
+            CONFIGOPTS+=(--with-boost="$BOOST_PATH")
             CONFIGOPTS+=(--without-alllang --with-$WITHLANG)
           fi
           if [[ $SWIGLANG = 'csharp' ]]; then
