@@ -1,4 +1,3 @@
-
 name: windows
 
 on:
@@ -185,7 +184,6 @@ jobs:
 
 # cl.exe:
 #  https://learn.microsoft.com//cpp/build/reference/compiler-options
-
 #  /EHc  extern "C" defaults to nothrow.
 #  /EHs  Enable C++ exception handling (no SEH exceptions).
 #  /W3   Warning level.
@@ -225,16 +223,20 @@ jobs:
         key: ${{ matrix.os || 'windows-2025' }}-${{ matrix.COMPILER || 'msvc' }}
 
     - name: Install vcpkg Packages
-      if: ${{ env.COMPILER == '' && matrix.COMPILER != 'gcc' }}
+      if: ${{ env.COMPILER == '' }}
       shell: powershell
       run: |
+          # Use static triplets so pcre2 is built as a static lib (.lib without
+          # a DLL counterpart), matching the -lpcre2-8 / /NODEFAULTLIB:MSVCRT
+          # linker flags used by cccl. NuGet is not available on windows-11-arm,
+          # so vcpkg is used for both x64 and arm64 runners for consistency.
           $triplet = if ($env:OS -eq 'windows-11-arm') { 'arm64-windows-static' } else { 'x64-windows-static' }
           vcpkg install pcre2:$triplet --triplet $triplet
           $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\$triplet"
           echo "VCPKG_INSTALLED=$vcpkgInstalled" >> $env:GITHUB_ENV
           echo "VCPKG_TRIPLET=$triplet" >> $env:GITHUB_ENV
-    - name: Install Boost
-      if: ${{ env.COMPILER == '' && matrix.COMPILER != 'gcc' }}
+    - name: Install Boost (MSVC)
+      if: ${{ env.COMPILER == '' }}
       uses: MarkusJx/install-boost@v2
       id: install-boost
       with:
@@ -345,7 +347,7 @@ jobs:
             # boost/ folder. SWIG's AX_BOOST_BASE uses --with-boost as a bare
             # -I path (no /include appended), so this same value is passed to
             # both configure and the test-suite Makefile compilations.
-            echo "BOOST_PATH=$(cygpath -u "${{ steps.install-boost.outputs.BOOST_ROOT }}")/include" >> $GITHUB_ENV
+            echo "BOOST_PATH=$(cygpath -u "${{ steps.install-boost.outputs.BOOST_ROOT }}")/include/boost-1_89" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
               python)
@@ -448,20 +450,6 @@ jobs:
           fi
           make --version | head -n2
           ./autogen.sh
-    - name: Debug Boost path
-      shell: bash
-      run: |
-        echo "BOOST_PATH=$BOOST_PATH"
-        echo "Listing BOOST_PATH:"
-        ls -la "$BOOST_PATH"
-
-        echo "Checking header:"
-        if [ -f "$BOOST_PATH/boost/shared_ptr.hpp" ]; then
-          echo "✅ Found boost/shared_ptr.hpp"
-        else
-          echo "❌ Missing boost/shared_ptr.hpp"
-          exit 1
-        fi
     - name: Configure
       shell: bash
       run: |
@@ -515,7 +503,7 @@ jobs:
           ./swig.exe -version
           make check-$SWIGLANG-version
           make check-$SWIGLANG-enabled
-          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS
+          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS"
           make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS
     - name: Install
       if: ${{ env.INSTALL == 'true' }}
