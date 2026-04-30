@@ -498,9 +498,8 @@ jobs:
           ./swig.exe -version
           make check-$SWIGLANG-version
           make check-$SWIGLANG-enabled
-          export CXXFLAGS="$CXXFLAGS -I$BOOST_INC"
-          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS
-          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS
+          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS BOOST_CPPFLAGS="-I$BOOST_INC"
+          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS BOOST_CPPFLAGS="-I$BOOST_INC"
     - name: Install
       if: ${{ env.INSTALL == 'true' }}
       shell: bash
