@@ -185,6 +185,7 @@ jobs:
 
 # cl.exe:
 #  https://learn.microsoft.com//cpp/build/reference/compiler-options
+
 #  /EHc  extern "C" defaults to nothrow.
 #  /EHs  Enable C++ exception handling (no SEH exceptions).
 #  /W3   Warning level.
@@ -224,18 +225,22 @@ jobs:
         key: ${{ matrix.os || 'windows-2025' }}-${{ matrix.COMPILER || 'msvc' }}
 
     - name: Install vcpkg Packages
-      if: ${{ env.COMPILER == '' }}
+      if: ${{ env.COMPILER == '' && matrix.COMPILER != 'gcc' }}
       shell: powershell
       run: |
-          # Use static triplets so pcre2 is built as a static lib (.lib without
-          # a DLL counterpart), matching the -lpcre2-8 / /NODEFAULTLIB:MSVCRT
-          # linker flags used by cccl. NuGet is not available on windows-11-arm,
-          # so vcpkg is used for both x64 and arm64 runners for consistency.
           $triplet = if ($env:OS -eq 'windows-11-arm') { 'arm64-windows-static' } else { 'x64-windows-static' }
-          vcpkg install pcre2:$triplet boost-headers:$triplet --triplet $triplet
+          vcpkg install pcre2:$triplet --triplet $triplet
           $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\$triplet"
           echo "VCPKG_INSTALLED=$vcpkgInstalled" >> $env:GITHUB_ENV
           echo "VCPKG_TRIPLET=$triplet" >> $env:GITHUB_ENV
+    - name: Install Boost
+      if: ${{ env.COMPILER == '' && matrix.COMPILER != 'gcc' }}
+      uses: MarkusJx/install-boost@v2
+      id: install-boost
+      with:
+        boost_version: 1.89.0
+        toolset: msvc
+        arch: ${{ matrix.os == 'windows-11-arm' && 'aarch64' || 'x86' }}
     # Set MSVC compilers path and environment variables.
     - name: Setup MSVC
       if: ${{ env.COMPILER == '' || env.SWIGLANG == 'csharp' }}
@@ -340,8 +345,7 @@ jobs:
             # boost/ folder. SWIG's AX_BOOST_BASE uses --with-boost as a bare
             # -I path (no /include appended), so this same value is passed to
             # both configure and the test-suite Makefile compilations.
-            echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX" >> $GITHUB_ENV
-            echo "EXTRA_CXXFLAGS=-I$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
+            echo "BOOST_PATH=${{ steps.install-boost.outputs.boost-root }}" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
               python)
@@ -498,7 +502,7 @@ jobs:
           make check-$SWIGLANG-version
           make check-$SWIGLANG-enabled
           make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS
-          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS EXTRA_CPPFLAGS="-IC:/vcpkg/installed/x64-windows-static/include" EXTRA_CXXFLAGS="-IC:/vcpkg/installed/x64-windows-static/include"
+          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS
     - name: Install
       if: ${{ env.INSTALL == 'true' }}
       shell: bash
