@@ -345,7 +345,7 @@ jobs:
             # boost/ folder. SWIG's AX_BOOST_BASE uses --with-boost as a bare
             # -I path (no /include appended), so this same value is passed to
             # both configure and the test-suite Makefile compilations.
-            echo "BOOST_PATH=${{ steps.install-boost.outputs.boost-root }}" >> $GITHUB_ENV
+            echo "BOOST_PATH=${{ steps.install-boost.outputs.BOOST_ROOT }}" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
               python)
