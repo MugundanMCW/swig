@@ -729,7 +729,11 @@ fi
 case $host in
 *-*-cygwin* | *-*-mingw* | *-*-msys*)
     if test "$GCC" = yes; then
-        CSHARPDYNAMICLINKING="$GCC_MNO_CYGWIN -mthreads -Wl,--add-stdcall-alias"
+        case $host in
+        aarch64-*) stdcall_alias="" ;;  # lld on CLANGARM64 does not support --add-stdcall-alias
+        *)         stdcall_alias="-Wl,--add-stdcall-alias" ;;
+        esac
+        CSHARPDYNAMICLINKING="$GCC_MNO_CYGWIN -mthreads $stdcall_alias"
         CSHARPCFLAGS="$GCC_MNO_CYGWIN -mthreads"
     else
         CSHARPDYNAMICLINKING=""
@@ -1179,7 +1183,11 @@ esac
 case $host in
 *-*-cygwin* | *-*-mingw* | *-*-msys*)
     if test "$GCC" = yes; then
-        JAVADYNAMICLINKING="$GCC_MNO_CYGWIN -mthreads -Wl,--add-stdcall-alias"
+		case $host in
+        aarch64-*) stdcall_alias="" ;;  # lld on CLANGARM64 does not support --add-stdcall-alias
+        *)         stdcall_alias="-Wl,--add-stdcall-alias" ;;
+        esac
+        JAVADYNAMICLINKING="$GCC_MNO_CYGWIN -mthreads $stdcall_alias"
         JAVACFLAGS="$GCC_MNO_CYGWIN -mthreads"
     else
         JAVADYNAMICLINKING=""
