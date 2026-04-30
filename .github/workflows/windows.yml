@@ -1,3 +1,4 @@
+
 name: windows
 
 on:
@@ -235,7 +236,6 @@ jobs:
           $vcpkgInstalled = "$env:VCPKG_INSTALLATION_ROOT\installed\$triplet"
           echo "VCPKG_INSTALLED=$vcpkgInstalled" >> $env:GITHUB_ENV
           echo "VCPKG_TRIPLET=$triplet" >> $env:GITHUB_ENV
-
     # Set MSVC compilers path and environment variables.
     - name: Setup MSVC
       if: ${{ env.COMPILER == '' || env.SWIGLANG == 'csharp' }}
@@ -341,7 +341,6 @@ jobs:
             # -I path (no /include appended), so this same value is passed to
             # both configure and the test-suite Makefile compilations.
             echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
-            echo "EXTRA_CXXFLAGS=-I$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
               python)
@@ -497,8 +496,8 @@ jobs:
           ./swig.exe -version
           make check-$SWIGLANG-version
           make check-$SWIGLANG-enabled
-          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS"
-          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS"
+          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS CXXFLAGS="$CXXFLAGS -I$BOOST_PATH"
+          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS CXXFLAGS="$CXXFLAGS -I$BOOST_PATH"
     - name: Install
       if: ${{ env.INSTALL == 'true' }}
       shell: bash
