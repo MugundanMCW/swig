@@ -340,10 +340,8 @@ jobs:
             # boost/ folder. SWIG's AX_BOOST_BASE uses --with-boost as a bare
             # -I path (no /include appended), so this same value is passed to
             # both configure and the test-suite Makefile compilations.
-            # BOOST_PATH is the prefix dir (without /include) - configure appends /include itself
-            echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX" >> $GITHUB_ENV
-            # BOOST_INC is the actual header dir - used directly in test suite compilation
-            echo "BOOST_INC=$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
+            echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
+            echo "EXTRA_CXXFLAGS=-I$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
               python)
@@ -499,8 +497,8 @@ jobs:
           ./swig.exe -version
           make check-$SWIGLANG-version
           make check-$SWIGLANG-enabled
-          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS BOOST_CPPFLAGS="-I$BOOST_INC"
-          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS BOOST_CPPFLAGS="-I$BOOST_INC"
+          make -k check-$SWIGLANG-examples $SWIGJOBS $CHECK_OPTIONS
+          make -k check-$SWIGLANG-test-suite $SWIGJOBS $CHECK_OPTIONS
     - name: Install
       if: ${{ env.INSTALL == 'true' }}
       shell: bash
