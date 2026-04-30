@@ -335,13 +335,10 @@ jobs:
             echo "PCRE2_LIBS=-L$VCPKG_INSTALLED_UNIX/lib $PCRE2_CCCL_LD" >> $GITHUB_ENV
             echo "CXX=/usr/bin/cccl" >> $GITHUB_ENV
             echo "CC=/usr/bin/cccl" >> $GITHUB_ENV
-            # BOOST_PATH must point to the directory directly containing the
-            # boost/ folder. SWIG's AX_BOOST_BASE uses --with-boost as a bare
-            # -I path (no /include appended), so this same value is passed to
-            # both configure and the test-suite Makefile compilations.
-            # BOOST_PATH is the prefix dir (without /include) - configure appends /include itself
-            echo "BOOST_PATH=$VCPKG_INSTALLED_UNIX" >> $GITHUB_ENV
-            # BOOST_INC is the actual header dir - used directly in test suite compilation
+            # BOOST_INC is the actual header dir used in test-suite compilation.
+            # boost-headers is header-only so AX_BOOST_BASE link test always fails;
+            # we skip --with-boost in configure and pass BOOST_CPPFLAGS directly
+            # on the make command line in the Test step instead.
             echo "BOOST_INC=$VCPKG_INSTALLED_UNIX/include" >> $GITHUB_ENV
             if [[ -n "$VER" ]]; then
               case "$SWIGLANG" in
@@ -451,7 +448,13 @@ jobs:
           set -x
           CONFIGOPTS+=(--disable-dependency-tracking)
           if [[ -n "$WITHLANG" ]]; then
-            CONFIGOPTS+=(--with-boost="$BOOST_PATH")
+            # Note: --with-boost is omitted for MSVC builds because boost-headers
+            # is header-only and AX_BOOST_BASE's link test always fails, leaving
+            # BOOST_CPPFLAGS empty. BOOST_CPPFLAGS is passed directly on the make
+            # command line in the Test step instead.
+            if [[ -n "$BOOST_PATH" ]]; then
+              CONFIGOPTS+=(--with-boost="$BOOST_PATH")
+            fi
             CONFIGOPTS+=(--without-alllang --with-$WITHLANG)
           fi
           if [[ $SWIGLANG = 'csharp' ]]; then
